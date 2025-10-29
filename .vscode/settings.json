@@ -71,5 +71,6 @@
         "typeindex": "cpp",
         "typeinfo": "cpp",
         "variant": "cpp"
-    }
+    },
+    "cmake.sourceDirectory": "/home/lunar5/omnilrs_ros2_demo/humble_ws/src/robot_controller"
 }

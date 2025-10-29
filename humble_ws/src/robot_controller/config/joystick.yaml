@@ -1,4 +1,5 @@
 joystick_handler:
   ros__parameters:
-    max_velocity: 0.3
+    # default value of max_velocity=0.3, max_omega=0.2
+    max_velocity: 1.0
     max_omnega: 0.2
