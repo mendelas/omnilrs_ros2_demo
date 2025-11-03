@@ -1,121 +1,77 @@
-FROM isaac-sim-omnilrs:latest
-
-ENV DEBIAN_FRONTEND=noninteractive
+FROM osrf/ros:humble-desktop
 ENV ROS_DISTRO=humble
-ENV NVIDIA_DRIVER_CAPABILITIES=compute,graphics,utility
-WORKDIR /root
 
-# --------------------------
-# 1. Base deps
-# --------------------------
+# Get the latest ROS GPG key
+RUN rm -f /etc/apt/sources.list.d/ros2-latest.list && \
+    apt-get update && apt-get install -y curl gnupg lsb-release && \
+    curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null
+
+# Install dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     software-properties-common \
-    git build-essential cmake byobu vim wget unzip \
-    libeigen3-dev libspdlog-dev libsuitesparse-dev libomp-dev \
-    python3-colcon-common-extensions python3-rosdep python3-pip \
-    libboost-all-dev libmetis-dev libfmt-dev libglm-dev \
-    libglfw3-dev libpng-dev libjpeg-dev libqglviewer-dev-qt5 \
-    libopencv-dev libpcl-dev \
-    qtdeclarative5-dev qt5-qmake \
-    # OpenGL / X11 (viewer 用)
-    libgl1-mesa-dev libglu1-mesa-dev freeglut3-dev \
-    libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
-    # ← ここが重要：freetype/fontconfig の dev を明示
-    libfreetype6-dev libfontconfig1-dev \
-    # ROS 追加
-    ros-${ROS_DISTRO}-rqt-tf-tree \
-    ros-${ROS_DISTRO}-joy-linux \
-    ros-${ROS_DISTRO}-image-geometry \
+    git \
+    build-essential \
+    cmake \
+    byobu \
+    vim \
+    wget \
+    unzip \
+    libeigen3-dev \
+    libspdlog-dev \
+    libsuitesparse-dev \
+    qtdeclarative5-dev \
+    qt5-qmake \
+    libqglviewer-dev-qt5 \
+    libopencv-dev \
+    libpcl-dev \
+    libpcl-conversions-dev \
+    libomp-dev \
+    python3-colcon-common-extensions \
+    python3-rosdep \
+    python3-pip \
+    ros-$ROS_DISTRO-rqt-tf-tree \
+    ros-$ROS_DISTRO-joy-linux \
+    ros-$ROS_DISTRO-image-geometry && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get clean
+
+# Check if rosdep needs to be initialized
+RUN if [ ! -f "/etc/ros/rosdep/sources.list.d/20-default.list" ]; then \
+    rosdep init; \
+    fi \
+    && rosdep update
+
+RUN apt-get update && apt-get install -y ros-$ROS_DISTRO-pcl-*
+
+# Install nav2 and slamtoolbox
+RUN apt-get update && apt-get install -y \
     ros-${ROS_DISTRO}-navigation2 \
     ros-${ROS_DISTRO}-nav2-bringup \
     ros-${ROS_DISTRO}-slam-toolbox \
-    ros-${ROS_DISTRO}-spatio-temporal-voxel-layer \
-    ros-${ROS_DISTRO}-foxglove-bridge \
-    ros-${ROS_DISTRO}-pcl-conversions \
-    && rm -rf /var/lib/apt/lists/* && apt-get clean
+    ros-${ROS_DISTRO}-spatio-temporal-voxel-layer
 
-# rosdep init/update
-RUN if [ ! -f "/etc/ros/rosdep/sources.list.d/20-default.list" ]; then \
-    rosdep init; \
-    fi && \
-    rosdep update
+# Install foxglove bridge
+RUN apt install -y ros-$ROS_DISTRO-foxglove-bridge
 
-# Python deps
-COPY requirements.txt /tmp/requirements.txt
-RUN pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir -r /tmp/requirements.txt
+# Install octomap
+# RUN apt-get install -y ros-${ROS_DISTRO}-octomap-mapping
 
-# --------------------------
-# 2. Build & install GTSAM
-# --------------------------
-WORKDIR /root
-RUN git clone https://github.com/borglab/gtsam && \
-    cd gtsam && git checkout 4.3a0 && \
-    mkdir build && cd build && \
-    cmake .. \
-    -DGTSAM_BUILD_EXAMPLES_ALWAYS=OFF \
-    -DGTSAM_BUILD_TESTS=OFF \
-    -DGTSAM_WITH_TBB=OFF \
-    -DGTSAM_USE_SYSTEM_EIGEN=ON \
-    -DGTSAM_BUILD_WITH_MARCH_NATIVE=OFF && \
-    make -j"$(nproc)" && \
-    make install && \
-    ldconfig
+COPY requirements.txt /tmp/
+RUN pip3 install --no-cache-dir --upgrade pip \
+    && pip3 install --no-cache-dir -r /tmp/requirements.txt
 
-# --------------------------
-# 3. Build & install iridescence
-# --------------------------
-WORKDIR /root
-RUN git clone --recursive https://github.com/koide3/iridescence && \
-    cd iridescence && mkdir build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release && \
-    make -j"$(nproc)" && \
-    make install && \
-    ldconfig
-
-# --------------------------
-# 4. Build & install gtsam_points (CUDA ON)
-# --------------------------
-WORKDIR /root
-RUN git clone https://github.com/koide3/gtsam_points && \
-    cd gtsam_points && mkdir build && cd build && \
-    cmake .. -DBUILD_WITH_CUDA=ON && \
-    make -j"$(nproc)" && \
-    make install && \
-    ldconfig
-
-# --------------------------
-# 5. ROS workspace with GLIM
-# --------------------------
-WORKDIR /ros2_ws/src
-RUN git clone https://github.com/koide3/glim && \
-    git clone https://github.com/koide3/glim_ros2
 
 WORKDIR /ros2_ws
+RUN echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> /root/.bashrc
+## For convenience:
+RUN echo "alias kk='clear'" >> /root/.bashrc
+RUN echo "alias tt='tmux new'" >> /root/.bashrc
+RUN echo "alias roskb='ros2 run teleop_twist_keyboard teleop_twist_keyboard'" >> /root/.bashrc
+# Save the bash history immediately on each execution
+RUN echo "export PROMPT_COMMAND='history -a' " >> "/root/.bashrc"
+RUN echo "export HISTFILE=/commandhistory/.bash_history" >> "/root/.bashrc"
 
-RUN apt-get update && \
-    rosdep install --from-paths src --ignore-src -r -y && \
-    rm -rf /var/lib/apt/lists/*
-
-SHELL ["/bin/bash", "-c"]
-
-RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
-    colcon build --cmake-args \
-    -DBUILD_WITH_CUDA=ON \
-    -DBUILD_WITH_VIEWER=ON \
-    -DBUILD_WITH_MARCH_NATIVE=OFF
-
-# --------------------------
-# 6. Shell quality-of-life
-# --------------------------
-RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /root/.bashrc && \
-    echo "source /ros2_ws/install/setup.bash" >> /root/.bashrc && \
-    echo "alias kk='clear'" >> /root/.bashrc && \
-    echo "alias roskb=\"ros2 run teleop_twist_keyboard teleop_twist_keyboard\"" >> /root/.bashrc && \
-    echo "export PROMPT_COMMAND='history -a'" >> /root/.bashrc && \
-    echo "export HISTFILE=/commandhistory/.bash_history" >> /root/.bashrc
-
-WORKDIR /ros2_ws
 ENTRYPOINT ["/ros_entrypoint.sh"]
 CMD ["bash"]
